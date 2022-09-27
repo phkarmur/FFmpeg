@@ -362,6 +362,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             float *src = (float *)insamples->extended_data[c];
             uint32_t *lut = s->color_lut + s->w * c;
             float max;
+            uint32_t tempColor = 0xFF00FF00; //ADDED
 
             s->meter(src, insamples->nb_samples, &s->max[c], s->rms_factor);
             max = s->max[c];
@@ -369,21 +370,48 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             s->values[c * VAR_VARS_NB + VAR_VOLUME] = 20.0 * log10(max);
             max = av_clipf(max, 0, 1);
             max_draw = calc_max_draw(s, outlink, max);
+            //EDIT STARTS
+            int start_point = (int )(s->w / 20);
+            int line_counter = 0;
+            for (j = (s->w - start_point); j > max_draw; j--, line_counter++) {
+            //for (j = max_draw; j < s->w; j++) {
+                if(j > s->w / 3) {
+                        tempColor = 0xFF00FF00; //GREEN
+                } else if(j > s->w / 7.3){
+                        tempColor = 0xFF00FFFF; //YELLOW
+                } else {
+                        tempColor = 0xFF0000FF; //RED
+                }
 
-            for (j = max_draw; j < s->w; j++) {
                 uint8_t *dst = s->out->data[0] + j * s->out->linesize[0] + c * (s->b + s->h) * 4;
                 for (k = 0; k < s->h; k++) {
-                    AV_WN32A(&dst[k * 4], lut[s->w - j - 1]);
+                    AV_WN32A(&dst[k * 4], tempColor);
+                    	
+                    if(line_counter > ((s->w - start_point) / 97)){
+                        j -= line_counter ;
+                        line_counter = 0;
+                    }
+                    //AV_WN32A(&dst[k * 4], lut[s->w - j - 1]);
                     if (j & step)
                         j += step;
                 }
             }
 
             if (s->h >= 8 && s->draw_text) {
-                int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
+                if(inlink->channels > 2){
+                    int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
+                    if (ret < 0)
+                        continue;
+                    drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 0);
+                } else {
+                    //char channel_names[128];
+                    sprintf(channel_name, "CH%d", c + 1);
+                    drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 0);
+                }
+                /*int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
                 if (ret < 0)
                     continue;
-                drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 1);
+                drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 1);*/
             }
 
             if (s->draw_persistent_duration > 0.) {
@@ -392,6 +420,16 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
                 draw_max_line(s, max_draw, c);
             }
         }
+        
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 25, "dB", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, 5, " 0", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 6.8), "-15", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3.1), "-30", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3 + s->w / 7.2), "-45", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 1.6), "-60", 0);
+        //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, (int) (s->w / 3 + s->w / 4.3), "-50", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, outlink->h - 45, "-90", 0);
+        //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 17, "inf", 0);
     } else { /* horizontal */
         for (c = 0; c < inlink->ch_layout.nb_channels; c++) {
             float *src = (float *)insamples->extended_data[c];
