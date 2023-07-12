@@ -318,6 +318,12 @@ static inline void draw_max_line(ShowVolumeContext *s, int max_draw, int channel
     }
 }
 
+static inline int rounder(int num, int dev){
+    int rem = num % dev;
+    if(rem > dev / 2)
+        return rem - dev; //-ve number
+    return rem; //+ve number
+}
 static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -370,9 +376,18 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             s->values[c * VAR_VARS_NB + VAR_VOLUME] = 20.0 * log10(max);
             max = av_clipf(max, 0, 1);
             max_draw = calc_max_draw(s, outlink, max);
+            
             //EDIT STARTS
             int start_point = (int )(s->w / 20);
             int line_counter = 0;
+            
+            max_draw -= rounder(max_draw, 100);
+            if(max_draw < 0)
+                max_draw = 0;
+            else if(max_draw > s->w - start_point)
+                max_draw = s->w - start_point;
+
+            
             for (j = (s->w - start_point); j > max_draw; j--, line_counter++) {
             //for (j = max_draw; j < s->w; j++) {
                 if(j > s->w / 3) {
@@ -402,16 +417,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
                     int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
                     if (ret < 0)
                         continue;
-                    drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 0);
                 } else {
-                    //char channel_names[128];
                     sprintf(channel_name, "CH%d", c + 1);
-                    drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 0);
                 }
-                /*int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
-                if (ret < 0)
-                    continue;
-                drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 1);*/
+                drawtext(s->out, c * (s->h + s->b) + (s->h - 10) / 2, outlink->h - 35, channel_name, 0);
             }
 
             if (s->draw_persistent_duration > 0.) {
@@ -421,14 +430,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             }
         }
         
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 25, "dB", 0);
+        /*drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 25, "dB", 0);
         drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, 5, " 0", 0);
         drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 6.8), "-15", 0);
         drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3.1), "-30", 0);
         drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3 + s->w / 7.2), "-45", 0);
         drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 1.6), "-60", 0);
         //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, (int) (s->w / 3 + s->w / 4.3), "-50", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, outlink->h - 45, "-90", 0);
+        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, outlink->h - 45, "-90", 0);*/
         //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 17, "inf", 0);
     } else { /* horizontal */
         for (c = 0; c < inlink->ch_layout.nb_channels; c++) {
