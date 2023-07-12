@@ -65,7 +65,7 @@ typedef struct DNXHDContext {
     int cur_field;                      ///< current interlaced field
     VLC ac_vlc, dc_vlc, run_vlc;
     IDCTDSPContext idsp;
-    ScanTable scantable;
+    uint8_t permutated_scantable[64];
     const CIDEntry *cid_table;
     int bit_depth; // 8, 10, 12 or 0 if not initialized at all.
     int is_444;
@@ -195,8 +195,9 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     }
     if (buf[5] & 2) { /* interlaced */
         ctx->cur_field = first_field ? buf[5] & 1 : !ctx->cur_field;
-        frame->interlaced_frame = 1;
-        frame->top_field_first  = first_field ^ ctx->cur_field;
+        frame->flags |= AV_FRAME_FLAG_INTERLACED;
+        if (first_field ^ ctx->cur_field)
+            frame->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
         av_log(ctx->avctx, AV_LOG_DEBUG,
                "interlaced %d, cur field %d\n", buf[5] & 3, ctx->cur_field);
     } else {
@@ -275,8 +276,8 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     if (ctx->bit_depth != old_bit_depth) {
         ff_blockdsp_init(&ctx->bdsp);
         ff_idctdsp_init(&ctx->idsp, ctx->avctx);
-        ff_init_scantable(ctx->idsp.idct_permutation, &ctx->scantable,
-                          ff_zigzag_direct);
+        ff_permute_scantable(ctx->permutated_scantable, ff_zigzag_direct,
+                             ctx->idsp.idct_permutation);
     }
 
     // make sure profile size constraints are respected
@@ -298,7 +299,7 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     ctx->mb_width  = (ctx->width + 15)>> 4;
     ctx->mb_height = AV_RB16(buf + 0x16c);
 
-    if ((ctx->height + 15) >> 4 == ctx->mb_height && frame->interlaced_frame)
+    if ((ctx->height + 15) >> 4 == ctx->mb_height && (frame->flags & AV_FRAME_FLAG_INTERLACED))
         ctx->height <<= 1;
 
     av_log(ctx->avctx, AV_LOG_VERBOSE, "%dx%d, 4:%s %d bits, MBAFF=%d ACT=%d\n",
@@ -316,7 +317,7 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
         }
         ctx->data_offset = 0x280;
     }
-    if ((ctx->mb_height << frame->interlaced_frame) > (ctx->height + 15) >> 4) {
+    if ((ctx->mb_height << !!(frame->flags & AV_FRAME_FLAG_INTERLACED)) > (ctx->height + 15) >> 4) {
         av_log(ctx->avctx, AV_LOG_ERROR,
                 "mb height too big: %d\n", ctx->mb_height);
         return AVERROR_INVALIDDATA;
@@ -436,7 +437,7 @@ static av_always_inline int dnxhd_decode_dct_block(const DNXHDContext *ctx,
             break;
         }
 
-        j     = ctx->scantable.permutated[i];
+        j      = ctx->permutated_scantable[i];
         level *= scale[i];
         level += scale[i] >> 1;
         if (level_bias < 32 || weight_matrix[i] != level_bias)
@@ -530,7 +531,7 @@ static int dnxhd_decode_macroblock(const DNXHDContext *ctx, RowContext *row,
             return AVERROR_INVALIDDATA;
     }
 
-    if (frame->interlaced_frame) {
+    if (frame->flags & AV_FRAME_FLAG_INTERLACED) {
         dct_linesize_luma   <<= 1;
         dct_linesize_chroma <<= 1;
     }
@@ -539,7 +540,7 @@ static int dnxhd_decode_macroblock(const DNXHDContext *ctx, RowContext *row,
     dest_u = frame->data[1] + ((y * dct_linesize_chroma) << 4) + (x << (3 + shift1 + ctx->is_444));
     dest_v = frame->data[2] + ((y * dct_linesize_chroma) << 4) + (x << (3 + shift1 + ctx->is_444));
 
-    if (frame->interlaced_frame && ctx->cur_field) {
+    if ((frame->flags & AV_FRAME_FLAG_INTERLACED) && ctx->cur_field) {
         dest_y += frame->linesize[0];
         dest_u += frame->linesize[1];
         dest_v += frame->linesize[2];
@@ -652,14 +653,14 @@ decode_coding_unit:
         if ((ret = ff_thread_get_buffer(avctx, picture, 0)) < 0)
             return ret;
         picture->pict_type = AV_PICTURE_TYPE_I;
-        picture->key_frame = 1;
+        picture->flags |= AV_FRAME_FLAG_KEY;
     }
 
     ctx->buf_size = buf_size - ctx->data_offset;
     ctx->buf = buf + ctx->data_offset;
     avctx->execute2(avctx, dnxhd_decode_row, picture, NULL, ctx->mb_height);
 
-    if (first_field && picture->interlaced_frame) {
+    if (first_field && (picture->flags & AV_FRAME_FLAG_INTERLACED)) {
         buf      += ctx->cid_table->coding_unit_size;
         buf_size -= ctx->cid_table->coding_unit_size;
         first_field = 0;

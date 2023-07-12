@@ -105,6 +105,9 @@ static const struct {
     #if CONFIG_G722DSP
         { "g722dsp", checkasm_check_g722dsp },
     #endif
+    #if CONFIG_H264CHROMA
+        { "h264chroma", checkasm_check_h264chroma },
+    #endif
     #if CONFIG_H264DSP
         { "h264dsp", checkasm_check_h264dsp },
     #endif
@@ -116,6 +119,7 @@ static const struct {
     #endif
     #if CONFIG_HEVC_DECODER
         { "hevc_add_res", checkasm_check_hevc_add_res },
+        { "hevc_deblock", checkasm_check_hevc_deblock },
         { "hevc_idct", checkasm_check_hevc_idct },
         { "hevc_pel", checkasm_check_hevc_pel },
         { "hevc_sao", checkasm_check_hevc_sao },
@@ -179,6 +183,9 @@ static const struct {
     #if CONFIG_BLEND_FILTER
         { "vf_blend", checkasm_check_blend },
     #endif
+    #if CONFIG_BWDIF_FILTER
+        { "vf_bwdif", checkasm_check_vf_bwdif },
+    #endif
     #if CONFIG_COLORSPACE_FILTER
         { "vf_colorspace", checkasm_check_colorspace },
     #endif
@@ -196,6 +203,9 @@ static const struct {
     #endif
     #if CONFIG_THRESHOLD_FILTER
         { "vf_threshold", checkasm_check_vf_threshold },
+    #endif
+    #if CONFIG_SOBEL_FILTER
+        { "vf_sobel", checkasm_check_vf_sobel },
     #endif
 #endif
 #if CONFIG_SWSCALE
@@ -220,6 +230,8 @@ static const struct {
 #if   ARCH_AARCH64
     { "ARMV8",    "armv8",    AV_CPU_FLAG_ARMV8 },
     { "NEON",     "neon",     AV_CPU_FLAG_NEON },
+    { "DOTPROD",  "dotprod",  AV_CPU_FLAG_DOTPROD },
+    { "I8MM",     "i8mm",     AV_CPU_FLAG_I8MM },
 #elif ARCH_ARM
     { "ARMV5TE",  "armv5te",  AV_CPU_FLAG_ARMV5TE },
     { "ARMV6",    "armv6",    AV_CPU_FLAG_ARMV6 },
@@ -232,6 +244,15 @@ static const struct {
     { "ALTIVEC",  "altivec",  AV_CPU_FLAG_ALTIVEC },
     { "VSX",      "vsx",      AV_CPU_FLAG_VSX },
     { "POWER8",   "power8",   AV_CPU_FLAG_POWER8 },
+#elif ARCH_RISCV
+    { "RVI",      "rvi",      AV_CPU_FLAG_RVI },
+    { "RVF",      "rvf",      AV_CPU_FLAG_RVF },
+    { "RVD",      "rvd",      AV_CPU_FLAG_RVD },
+    { "RVVi32",   "rvv_i32",  AV_CPU_FLAG_RVV_I32 },
+    { "RVVf32",   "rvv_f32",  AV_CPU_FLAG_RVV_F32 },
+    { "RVVi64",   "rvv_i64",  AV_CPU_FLAG_RVV_I64 },
+    { "RVVf64",   "rvv_f64",  AV_CPU_FLAG_RVV_F64 },
+    { "RVBbasic", "rvb_b",    AV_CPU_FLAG_RVB_BASIC },
 #elif ARCH_MIPS
     { "MMI",      "mmi",      AV_CPU_FLAG_MMI },
     { "MSA",      "msa",      AV_CPU_FLAG_MSA },
@@ -909,5 +930,6 @@ int checkasm_check_##type(const char *const file, const int line, \
 
 DEF_CHECKASM_CHECK_FUNC(uint8_t,  "%02x")
 DEF_CHECKASM_CHECK_FUNC(uint16_t, "%04x")
+DEF_CHECKASM_CHECK_FUNC(uint32_t, "%08x")
 DEF_CHECKASM_CHECK_FUNC(int16_t,  "%6d")
 DEF_CHECKASM_CHECK_FUNC(int32_t,  "%9d")

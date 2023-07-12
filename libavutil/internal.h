@@ -40,7 +40,6 @@
 #include <stdio.h>
 #include "config.h"
 #include "attributes.h"
-#include "timer.h"
 #include "macros.h"
 #include "pixfmt.h"
 
@@ -186,7 +185,5 @@ static av_always_inline av_const int avpriv_mirror(int x, int w)
     }
     return x;
 }
-
-void ff_check_pixfmt_descriptors(void);
 
 #endif /* AVUTIL_INTERNAL_H */

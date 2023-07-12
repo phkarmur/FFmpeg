@@ -168,24 +168,31 @@ static int decode_slice_header(const FFV1Context *f, FFV1Context *fs)
     RangeCoder *c = &fs->c;
     uint8_t state[CONTEXT_SIZE];
     unsigned ps, i, context_count;
+    int sx, sy, sw, sh;
+
     memset(state, 128, sizeof(state));
+    sx = get_symbol(c, state, 0);
+    sy = get_symbol(c, state, 0);
+    sw = get_symbol(c, state, 0) + 1U;
+    sh = get_symbol(c, state, 0) + 1U;
 
     av_assert0(f->version > 2);
 
-    fs->slice_x      =  get_symbol(c, state, 0)      * f->width ;
-    fs->slice_y      =  get_symbol(c, state, 0)      * f->height;
-    fs->slice_width  = (get_symbol(c, state, 0) + 1) * f->width  + fs->slice_x;
-    fs->slice_height = (get_symbol(c, state, 0) + 1) * f->height + fs->slice_y;
 
-    fs->slice_x /= f->num_h_slices;
-    fs->slice_y /= f->num_v_slices;
-    fs->slice_width  = fs->slice_width /f->num_h_slices - fs->slice_x;
-    fs->slice_height = fs->slice_height/f->num_v_slices - fs->slice_y;
-    if ((unsigned)fs->slice_width > f->width || (unsigned)fs->slice_height > f->height)
-        return -1;
-    if (    (unsigned)fs->slice_x + (uint64_t)fs->slice_width  > f->width
-         || (unsigned)fs->slice_y + (uint64_t)fs->slice_height > f->height)
-        return -1;
+    if (sx < 0 || sy < 0 || sw <= 0 || sh <= 0)
+        return AVERROR_INVALIDDATA;
+    if (sx > f->num_h_slices - sw || sy > f->num_v_slices - sh)
+        return AVERROR_INVALIDDATA;
+
+    fs->slice_x      =  sx       * (int64_t)f->width  / f->num_h_slices;
+    fs->slice_y      =  sy       * (int64_t)f->height / f->num_v_slices;
+    fs->slice_width  = (sx + sw) * (int64_t)f->width  / f->num_h_slices - fs->slice_x;
+    fs->slice_height = (sy + sh) * (int64_t)f->height / f->num_v_slices - fs->slice_y;
+
+    av_assert0((unsigned)fs->slice_width  <= f->width &&
+                (unsigned)fs->slice_height <= f->height);
+    av_assert0 (   (unsigned)fs->slice_x + (uint64_t)fs->slice_width  <= f->width
+                && (unsigned)fs->slice_y + (uint64_t)fs->slice_height <= f->height);
 
     if (fs->ac == AC_GOLOMB_RICE && fs->slice_width >= (1<<23))
         return AVERROR_INVALIDDATA;
@@ -210,13 +217,13 @@ static int decode_slice_header(const FFV1Context *f, FFV1Context *fs)
 
     ps = get_symbol(c, state, 0);
     if (ps == 1) {
-        f->cur->interlaced_frame = 1;
-        f->cur->top_field_first  = 1;
+        f->cur->flags |= AV_FRAME_FLAG_INTERLACED;
+        f->cur->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
     } else if (ps == 2) {
-        f->cur->interlaced_frame = 1;
-        f->cur->top_field_first  = 0;
+        f->cur->flags |= AV_FRAME_FLAG_INTERLACED;
+        f->cur->flags &= ~AV_FRAME_FLAG_TOP_FIELD_FIRST;
     } else if (ps == 3) {
-        f->cur->interlaced_frame = 0;
+        f->cur->flags &= ~AV_FRAME_FLAG_INTERLACED;
     }
     f->cur->sample_aspect_ratio.num = get_symbol(c, state, 0);
     f->cur->sample_aspect_ratio.den = get_symbol(c, state, 0);
@@ -257,16 +264,16 @@ static int decode_slice(AVCodecContext *c, void *arg)
     for( si=0; fs != f->slice_context[si]; si ++)
         ;
 
-    if(f->fsrc && !p->key_frame)
+    if(f->fsrc && !(p->flags & AV_FRAME_FLAG_KEY))
         ff_thread_await_progress(&f->last_picture, si, 0);
 
-    if(f->fsrc && !p->key_frame) {
+    if(f->fsrc && !(p->flags & AV_FRAME_FLAG_KEY)) {
         FFV1Context *fssrc = f->fsrc->slice_context[si];
         FFV1Context *fsdst = f->slice_context[si];
         av_assert1(fsdst->plane_count == fssrc->plane_count);
         av_assert1(fsdst == fs);
 
-        if (!p->key_frame)
+        if (!(p->flags & AV_FRAME_FLAG_KEY))
             fsdst->slice_damaged |= fssrc->slice_damaged;
 
         for (i = 0; i < f->plane_count; i++) {
@@ -303,8 +310,11 @@ static int decode_slice(AVCodecContext *c, void *arg)
     }
     if ((ret = ff_ffv1_init_slice_state(f, fs)) < 0)
         return ret;
-    if (f->cur->key_frame || fs->slice_reset_contexts)
+    if ((f->cur->flags & AV_FRAME_FLAG_KEY) || fs->slice_reset_contexts) {
         ff_ffv1_clear_slice_state(f, fs);
+    } else if (fs->slice_damaged) {
+        return AVERROR_INVALIDDATA;
+    }
 
     width  = fs->slice_width;
     height = fs->slice_height;
@@ -429,6 +439,11 @@ static int read_extra_header(FFV1Context *f)
         av_log(f->avctx, AV_LOG_ERROR, "Invalid version in global header\n");
         return AVERROR_INVALIDDATA;
     }
+    if (f->version > 4) {
+        av_log(f->avctx, AV_LOG_ERROR, "unsupported version %d\n",
+            f->version);
+        return AVERROR_PATCHWELCOME;
+    }
     if (f->version > 2) {
         c->bytestream_end -= 4;
         f->micro_version = get_symbol(c, state, 0);
@@ -463,6 +478,11 @@ static int read_extra_header(FFV1Context *f)
        ) {
         av_log(f->avctx, AV_LOG_ERROR, "slice count invalid\n");
         return AVERROR_INVALIDDATA;
+    }
+
+    if (f->num_h_slices > MAX_SLICES / f->num_v_slices) {
+        av_log(f->avctx, AV_LOG_ERROR, "slice count unsupported\n");
+        return AVERROR_PATCHWELCOME;
     }
 
     f->quant_table_count = get_symbol(c, state, 0);
@@ -767,21 +787,25 @@ static int read_header(FFV1Context *f)
         fs->slice_damaged = 0;
 
         if (f->version == 2) {
-            fs->slice_x      =  get_symbol(c, state, 0)      * f->width ;
-            fs->slice_y      =  get_symbol(c, state, 0)      * f->height;
-            fs->slice_width  = (get_symbol(c, state, 0) + 1) * f->width  + fs->slice_x;
-            fs->slice_height = (get_symbol(c, state, 0) + 1) * f->height + fs->slice_y;
+            int sx = get_symbol(c, state, 0);
+            int sy = get_symbol(c, state, 0);
+            int sw = get_symbol(c, state, 0) + 1U;
+            int sh = get_symbol(c, state, 0) + 1U;
 
-            fs->slice_x     /= f->num_h_slices;
-            fs->slice_y     /= f->num_v_slices;
-            fs->slice_width  = fs->slice_width  / f->num_h_slices - fs->slice_x;
-            fs->slice_height = fs->slice_height / f->num_v_slices - fs->slice_y;
-            if ((unsigned)fs->slice_width  > f->width ||
-                (unsigned)fs->slice_height > f->height)
+            if (sx < 0 || sy < 0 || sw <= 0 || sh <= 0)
                 return AVERROR_INVALIDDATA;
-            if (   (unsigned)fs->slice_x + (uint64_t)fs->slice_width  > f->width
-                || (unsigned)fs->slice_y + (uint64_t)fs->slice_height > f->height)
+            if (sx > f->num_h_slices - sw || sy > f->num_v_slices - sh)
                 return AVERROR_INVALIDDATA;
+
+            fs->slice_x      =  sx       * (int64_t)f->width  / f->num_h_slices;
+            fs->slice_y      =  sy       * (int64_t)f->height / f->num_v_slices;
+            fs->slice_width  = (sx + sw) * (int64_t)f->width  / f->num_h_slices - fs->slice_x;
+            fs->slice_height = (sy + sh) * (int64_t)f->height / f->num_v_slices - fs->slice_y;
+
+            av_assert0((unsigned)fs->slice_width  <= f->width &&
+                       (unsigned)fs->slice_height <= f->height);
+            av_assert0 (   (unsigned)fs->slice_x + (uint64_t)fs->slice_width  <= f->width
+                        && (unsigned)fs->slice_y + (uint64_t)fs->slice_height <= f->height);
         }
 
         for (i = 0; i < f->plane_count; i++) {
@@ -857,9 +881,9 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
 
     if (f->version < 3 && avctx->field_order > AV_FIELD_PROGRESSIVE) {
         /* we have interlaced material flagged in container */
-        p->interlaced_frame = 1;
+        p->flags |= AV_FRAME_FLAG_INTERLACED;
         if (avctx->field_order == AV_FIELD_TT || avctx->field_order == AV_FIELD_TB)
-            p->top_field_first = 1;
+            p->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
     }
 
     f->avctx = avctx;
@@ -868,7 +892,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
 
     p->pict_type = AV_PICTURE_TYPE_I; //FIXME I vs. P
     if (get_rac(c, &keystate)) {
-        p->key_frame    = 1;
+        p->flags |= AV_FRAME_FLAG_KEY;
         f->key_frame_ok = 0;
         if ((ret = read_header(f)) < 0)
             return ret;
@@ -879,7 +903,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
                    "Cannot decode non-keyframe without valid keyframe\n");
             return AVERROR_INVALIDDATA;
         }
-        p->key_frame = 0;
+        p->flags &= ~AV_FRAME_FLAG_KEY;
     }
 
     if (f->ac != AC_GOLOMB_RICE) {
@@ -903,7 +927,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
 
     if (avctx->debug & FF_DEBUG_PICT_INFO)
         av_log(avctx, AV_LOG_DEBUG, "ver:%d keyframe:%d coder:%d ec:%d slices:%d bps:%d\n",
-               f->version, p->key_frame, f->ac, f->ec, f->slice_count, f->avctx->bits_per_raw_sample);
+               f->version, !!(p->flags & AV_FRAME_FLAG_KEY), f->ac, f->ec, f->slice_count, f->avctx->bits_per_raw_sample);
 
     ff_thread_finish_setup(avctx);
 
@@ -1099,7 +1123,7 @@ const FFCodec ff_ffv1_decoder = {
     .close          = ffv1_decode_close,
     FF_CODEC_DECODE_CB(decode_frame),
     UPDATE_THREAD_CONTEXT(update_thread_context),
-    .p.capabilities = AV_CODEC_CAP_DR1 /*| AV_CODEC_CAP_DRAW_HORIZ_BAND*/ |
+    .p.capabilities = AV_CODEC_CAP_DR1 |
                       AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP |
                       FF_CODEC_CAP_ALLOCATE_PROGRESS,

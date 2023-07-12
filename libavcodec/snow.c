@@ -23,7 +23,6 @@
 #include "avcodec.h"
 #include "decode.h"
 #include "encode.h"
-#include "me_cmp.h"
 #include "snow_dwt.h"
 #include "snow.h"
 #include "snowdata.h"
@@ -434,7 +433,6 @@ av_cold int ff_snow_common_init(AVCodecContext *avctx){
     s->max_ref_frames=1; //just make sure it's not an invalid value in case of no initial keyframe
     s->spatial_decomposition_count = 1;
 
-    ff_me_cmp_init(&s->mecc, avctx);
     ff_hpeldsp_init(&s->hdsp, avctx->flags);
     ff_videodsp_init(&s->vdsp, 8);
     ff_dwt_init(&s->dwt);
@@ -608,7 +606,7 @@ int ff_snow_frame_start(SnowContext *s){
     }else{
         int i;
         for(i=0; i<s->max_ref_frames && s->last_picture[i]->data[0]; i++)
-            if(i && s->last_picture[i-1]->key_frame)
+            if(i && (s->last_picture[i-1]->flags & AV_FRAME_FLAG_KEY))
                 break;
         s->ref_frames= i;
         if(s->ref_frames==0){
@@ -619,7 +617,10 @@ int ff_snow_frame_start(SnowContext *s){
     if ((ret = ff_snow_get_buffer(s, s->current_picture)) < 0)
         return ret;
 
-    s->current_picture->key_frame= s->keyframe;
+    if (s->keyframe)
+        s->current_picture->flags |= AV_FRAME_FLAG_KEY;
+    else
+        s->current_picture->flags &= ~AV_FRAME_FLAG_KEY;
 
     return 0;
 }
@@ -637,7 +638,6 @@ av_cold void ff_snow_common_end(SnowContext *s)
     s->m.me.temp= NULL;
     av_freep(&s->m.me.scratchpad);
     av_freep(&s->m.me.map);
-    av_freep(&s->m.me.score_map);
     av_freep(&s->m.sc.obmc_scratchpad);
 
     av_freep(&s->block);

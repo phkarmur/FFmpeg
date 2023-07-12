@@ -40,7 +40,7 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, AVFrame *pic,
     int i, j, zret, ret;
 
     if (avpkt->flags & AV_PKT_FLAG_KEY) {
-        pic->key_frame = 1;
+        pic->flags |= AV_FRAME_FLAG_KEY;
         pic->pict_type = AV_PICTURE_TYPE_I;
     } else {
         if (!prev) {
@@ -50,7 +50,7 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, AVFrame *pic,
 
         prev += (avctx->height - 1) * prev_pic->linesize[0];
 
-        pic->key_frame = 0;
+        pic->flags &= ~AV_FRAME_FLAG_KEY;
         pic->pict_type = AV_PICTURE_TYPE_P;
     }
 
@@ -84,11 +84,12 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, AVFrame *pic,
             return AVERROR_INVALIDDATA;
         }
 
-        if (!(avpkt->flags & AV_PKT_FLAG_KEY))
+        if (!(avpkt->flags & AV_PKT_FLAG_KEY)) {
             for (j = 0; j < avctx->width << 1; j++)
                 dst[j] += prev[j] & -!dst[j];
+            prev -= prev_pic->linesize[0];
+        }
 
-        prev -= prev_pic->linesize[0];
         dst  -= pic->linesize[0];
     }
 

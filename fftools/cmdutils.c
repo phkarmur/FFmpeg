@@ -798,12 +798,7 @@ do {                                                                           \
 
 void print_error(const char *filename, int err)
 {
-    char errbuf[128];
-    const char *errbuf_ptr = errbuf;
-
-    if (av_strerror(err, errbuf, sizeof(errbuf)) < 0)
-        errbuf_ptr = strerror(AVUNERROR(err));
-    av_log(NULL, AV_LOG_ERROR, "%s: %s\n", filename, errbuf_ptr);
+    av_log(NULL, AV_LOG_ERROR, "%s: %s\n", filename, av_err2str(err));
 }
 
 int read_yesno(void)
@@ -926,7 +921,7 @@ AVDictionary *filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id,
         break;
     }
 
-    while (t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)) {
+    while (t = av_dict_iterate(opts, t)) {
         const AVClass *priv_class;
         char *p = strchr(t->key, ':');
 
@@ -999,7 +994,7 @@ void *allocate_array_elem(void *ptr, size_t elem_size, int *nb_elems)
     return new_elem;
 }
 
-double get_rotation(int32_t *displaymatrix)
+double get_rotation(const int32_t *displaymatrix)
 {
     double theta = 0;
     if (displaymatrix)

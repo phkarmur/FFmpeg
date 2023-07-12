@@ -594,7 +594,8 @@ static av_cold int opengl_read_limits(AVFormatContext *h)
     }
 
     av_log(h, AV_LOG_DEBUG, "OpenGL version: %s\n", version);
-    sscanf(version, "%d.%d", &major, &minor);
+    if (sscanf(version, "%d.%d", &major, &minor) != 2)
+        return AVERROR(ENOSYS);
 
     for (i = 0; required_extensions[i].extension; i++) {
         if (major < required_extensions[i].major &&
@@ -1292,17 +1293,17 @@ static const AVClass opengl_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
 };
 
-const AVOutputFormat ff_opengl_muxer = {
-    .name           = "opengl",
-    .long_name      = NULL_IF_CONFIG_SMALL("OpenGL output"),
+const FFOutputFormat ff_opengl_muxer = {
+    .p.name              = "opengl",
+    .p.long_name         = NULL_IF_CONFIG_SMALL("OpenGL output"),
+    .p.audio_codec       = AV_CODEC_ID_NONE,
+    .p.video_codec       = AV_CODEC_ID_WRAPPED_AVFRAME,
+    .p.flags             = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
+    .p.priv_class        = &opengl_class,
     .priv_data_size = sizeof(OpenGLContext),
-    .audio_codec    = AV_CODEC_ID_NONE,
-    .video_codec    = AV_CODEC_ID_WRAPPED_AVFRAME,
     .write_header   = opengl_write_header,
     .write_packet   = opengl_write_packet,
     .write_uncoded_frame = opengl_write_frame,
     .write_trailer  = opengl_write_trailer,
     .control_message = opengl_control_message,
-    .flags          = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
-    .priv_class     = &opengl_class,
 };

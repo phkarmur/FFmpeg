@@ -31,9 +31,7 @@
 
 
 enum CBSContentType {
-    // Unit content is a simple structure.
-    CBS_CONTENT_TYPE_POD,
-    // Unit content contains some references to other structures, but all
+    // Unit content may contain some references to other structures, but all
     // managed via buffer reference counting.  The descriptor defines the
     // structure offsets of every buffer reference.
     CBS_CONTENT_TYPE_INTERNAL_REFS,
@@ -43,9 +41,9 @@ enum CBSContentType {
 };
 
 enum {
-      // Maximum number of unit types described by the same unit type
-      // descriptor.
-      CBS_MAX_UNIT_TYPES  = 3,
+      // Maximum number of unit types described by the same non-range
+      // unit type descriptor.
+      CBS_MAX_LIST_UNIT_TYPES = 3,
       // Maximum number of reference buffer offsets in any one unit.
       CBS_MAX_REF_OFFSETS = 2,
       // Special value used in a unit type descriptor to indicate that it
@@ -62,7 +60,7 @@ typedef const struct CodedBitstreamUnitTypeDescriptor {
 
     union {
         // Array of unit types that this entry describes.
-        CodedBitstreamUnitType list[CBS_MAX_UNIT_TYPES];
+        CodedBitstreamUnitType list[CBS_MAX_LIST_UNIT_TYPES];
         // Start and end of unit type range, used if nb_unit_types is
         // CBS_UNIT_TYPE_RANGE.
         struct {
@@ -78,9 +76,12 @@ typedef const struct CodedBitstreamUnitTypeDescriptor {
     size_t content_size;
 
     union {
+        // This union's state is determined by content_type:
+        // ref for CBS_CONTENT_TYPE_INTERNAL_REFS,
+        // complex for CBS_CONTENT_TYPE_COMPLEX.
         struct {
-            // Number of entries in the ref_offsets array.  Only nonzero
-            // if the content_type is CBS_CONTENT_TYPE_INTERNAL_REFS.
+            // Number of entries in the ref_offsets array.
+            // May be zero, then the structure is POD-like.
             int nb_offsets;
             // The structure must contain two adjacent elements:
             //   type        *field;
@@ -131,6 +132,12 @@ typedef struct CodedBitstreamType {
     int (*write_unit)(CodedBitstreamContext *ctx,
                       CodedBitstreamUnit *unit,
                       PutBitContext *pbc);
+
+    // Return 1 when the unit should be dropped according to 'skip',
+    // 0 otherwise.
+    int (*discarded_unit)(CodedBitstreamContext *ctx,
+                          const CodedBitstreamUnit *unit,
+                          enum AVDiscard skip);
 
     // Read the data from all of frag->units and assemble it into
     // a bitstream for the whole fragment.
@@ -191,18 +198,20 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
 #define MIN_INT_BITS(length) (-(INT64_C(1) << ((length) - 1)))
 
 #define TYPE_LIST(...) { __VA_ARGS__ }
-#define CBS_UNIT_TYPE_POD(type, structure) { \
+#define CBS_UNIT_TYPE_POD(type_, structure) { \
         .nb_unit_types  = 1, \
-        .unit_type.list = { type }, \
-        .content_type   = CBS_CONTENT_TYPE_POD, \
+        .unit_type.list = { type_ }, \
+        .content_type   = CBS_CONTENT_TYPE_INTERNAL_REFS, \
         .content_size   = sizeof(structure), \
+        .type.ref       = { .nb_offsets = 0 }, \
     }
 #define CBS_UNIT_RANGE_POD(range_start, range_end, structure) { \
         .nb_unit_types         = CBS_UNIT_TYPE_RANGE, \
         .unit_type.range.start = range_start, \
         .unit_type.range.end   = range_end, \
-        .content_type          = CBS_CONTENT_TYPE_POD, \
+        .content_type          = CBS_CONTENT_TYPE_INTERNAL_REFS, \
         .content_size          = sizeof(structure), \
+        .type.ref              = { .nb_offsets = 0 }, \
     }
 
 #define CBS_UNIT_TYPES_INTERNAL_REF(types, structure, ref_field) { \
@@ -242,6 +251,7 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
 extern const CodedBitstreamType ff_cbs_type_av1;
 extern const CodedBitstreamType ff_cbs_type_h264;
 extern const CodedBitstreamType ff_cbs_type_h265;
+extern const CodedBitstreamType ff_cbs_type_h266;
 extern const CodedBitstreamType ff_cbs_type_jpeg;
 extern const CodedBitstreamType ff_cbs_type_mpeg2;
 extern const CodedBitstreamType ff_cbs_type_vp9;

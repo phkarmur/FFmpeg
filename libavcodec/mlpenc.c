@@ -2118,7 +2118,7 @@ static int mlp_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     data = frame ? frame->data[0] : NULL;
 
-    ctx->frame_index = avctx->frame_number % ctx->max_restart_interval;
+    ctx->frame_index = avctx->frame_num % ctx->max_restart_interval;
 
     ctx->inout_buffer = ctx->major_inout_buffer
                       + ctx->frame_index * ctx->one_sample_buffer_size;
@@ -2128,7 +2128,7 @@ static int mlp_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     ctx->write_buffer = ctx->inout_buffer;
 
-    if (avctx->frame_number < ctx->max_restart_interval) {
+    if (avctx->frame_num < ctx->max_restart_interval) {
         if (data)
             goto input_and_return;
     }
@@ -2199,7 +2199,7 @@ input_and_return:
     }
 
     if (!frame && ctx->last_frames < ctx->max_restart_interval - 1)
-        avctx->frame_number++;
+        avctx->frame_num++;
 
     if (bytes_written > 0) {
         ff_af_queue_remove(&ctx->afq,
@@ -2252,9 +2252,7 @@ const FFCodec ff_mlp_encoder = {
     .close                  = mlp_encode_close,
     .p.sample_fmts          = (const enum AVSampleFormat[]) {AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, AV_SAMPLE_FMT_NONE},
     .p.supported_samplerates = (const int[]) {44100, 48000, 88200, 96000, 176400, 192000, 0},
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts      = ff_mlp_channel_layouts,
-#endif
+    CODEC_OLD_CHANNEL_LAYOUTS_ARRAY(ff_mlp_channel_layouts)
     .p.ch_layouts           = ff_mlp_ch_layouts,
     .caps_internal          = FF_CODEC_CAP_INIT_CLEANUP,
 };
@@ -2274,9 +2272,7 @@ const FFCodec ff_truehd_encoder = {
     .close                  = mlp_encode_close,
     .p.sample_fmts          = (const enum AVSampleFormat[]) {AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, AV_SAMPLE_FMT_NONE},
     .p.supported_samplerates = (const int[]) {44100, 48000, 88200, 96000, 176400, 192000, 0},
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts      = (const uint64_t[]) { AV_CH_LAYOUT_MONO, AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_5POINT0, AV_CH_LAYOUT_5POINT1, 0 },
-#endif
+    CODEC_OLD_CHANNEL_LAYOUTS(AV_CH_LAYOUT_MONO, AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_5POINT0, AV_CH_LAYOUT_5POINT1)
     .p.ch_layouts           = (const AVChannelLayout[]) {
                                   AV_CHANNEL_LAYOUT_MONO,
                                   AV_CHANNEL_LAYOUT_STEREO,

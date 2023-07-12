@@ -40,6 +40,9 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CONFIG_CBS_H265
     &ff_cbs_type_h265,
 #endif
+#if CONFIG_CBS_H266
+    &ff_cbs_type_h266,
+#endif
 #if CONFIG_CBS_JPEG
     &ff_cbs_type_jpeg,
 #endif
@@ -60,6 +63,9 @@ const enum AVCodecID ff_cbs_all_codec_ids[] = {
 #endif
 #if CONFIG_CBS_H265
     AV_CODEC_ID_H265,
+#endif
+#if CONFIG_CBS_H266
+    AV_CODEC_ID_H266,
 #endif
 #if CONFIG_CBS_JPEG
     AV_CODEC_ID_MJPEG,
@@ -839,12 +845,10 @@ void ff_cbs_delete_unit(CodedBitstreamFragment *frag,
 static void cbs_default_free_unit_content(void *opaque, uint8_t *data)
 {
     const CodedBitstreamUnitTypeDescriptor *desc = opaque;
-    if (desc->content_type == CBS_CONTENT_TYPE_INTERNAL_REFS) {
-        int i;
-        for (i = 0; i < desc->type.ref.nb_offsets; i++) {
-            void **ptr = (void**)(data + desc->type.ref.offsets[i]);
-            av_buffer_unref((AVBufferRef**)(ptr + 1));
-        }
+
+    for (int i = 0; i < desc->type.ref.nb_offsets; i++) {
+        void **ptr = (void**)(data + desc->type.ref.offsets[i]);
+        av_buffer_unref((AVBufferRef**)(ptr + 1));
     }
     av_free(data);
 }
@@ -981,14 +985,6 @@ static int cbs_clone_unit_content(CodedBitstreamContext *ctx,
         return AVERROR(ENOSYS);
 
     switch (desc->content_type) {
-    case CBS_CONTENT_TYPE_POD:
-        ref = av_buffer_alloc(desc->content_size);
-        if (!ref)
-            return AVERROR(ENOMEM);
-        memcpy(ref->data, unit->content, desc->content_size);
-        err = 0;
-        break;
-
     case CBS_CONTENT_TYPE_INTERNAL_REFS:
         err = cbs_clone_internal_refs_unit_content(&ref, unit, desc);
         break;
@@ -1035,4 +1031,25 @@ int ff_cbs_make_unit_writable(CodedBitstreamContext *ctx,
         return err;
     av_buffer_unref(&ref);
     return 0;
+}
+
+void ff_cbs_discard_units(CodedBitstreamContext *ctx,
+                          CodedBitstreamFragment *frag,
+                          enum AVDiscard skip,
+                          int flags)
+{
+    if (!ctx->codec->discarded_unit)
+        return;
+
+    for (int i = frag->nb_units - 1; i >= 0; i--) {
+        if (ctx->codec->discarded_unit(ctx, &frag->units[i], skip)) {
+            // discard all units
+            if (!(flags & DISCARD_FLAG_KEEP_NON_VCL)) {
+                ff_cbs_fragment_free(frag);
+                return;
+            }
+
+            ff_cbs_delete_unit(frag, i);
+        }
+    }
 }
