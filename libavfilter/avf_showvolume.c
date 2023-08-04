@@ -413,7 +413,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             }
 
             if (s->h >= 8 && s->draw_text) {
-                if(inlink->channels > 2){
+                if(inlink->ch_layout.nb_channels > 2){
                     int ret = av_channel_name(channel_name, sizeof(channel_name), av_channel_layout_channel_from_index(&insamples->ch_layout, c));
                     if (ret < 0)
                         continue;
@@ -430,15 +430,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             }
         }
         
-        /*drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 25, "dB", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, 5, " 0", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 6.8), "-15", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3.1), "-30", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3 + s->w / 7.2), "-45", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 1.6), "-60", 0);
-        //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, (int) (s->w / 3 + s->w / 4.3), "-50", 0);
-        drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 25) / 2, outlink->h - 45, "-90", 0);*/
-        //drawtext(s->out, inlink->channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 17, "inf", 0);
+        /*drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 25, "dB", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, 5, " 0", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 6.8), "-15", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3.1), "-30", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 3 + s->w / 7.2), "-45", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, (int) (s->w / 1.6), "-60", 0);
+        //drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 20) / 2, (int) (s->w / 3 + s->w / 4.3), "-50", 0);
+        drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 25) / 2, outlink->h - 45, "-90", 0);*/
+        //drawtext(s->out, inlink->ch_layout.nb_channels * (s->h + s->b) + (s->h - 20) / 2, outlink->h - 17, "inf", 0);
     } else { /* horizontal */
         for (c = 0; c < inlink->ch_layout.nb_channels; c++) {
             float *src = (float *)insamples->extended_data[c];
